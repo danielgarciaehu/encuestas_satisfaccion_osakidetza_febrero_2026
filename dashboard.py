@@ -3,27 +3,83 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import numpy as np
-import re
 from pathlib import Path
 
 st.set_page_config(
     page_title="Dashboard Encuestas CCEE",
-    page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 st.markdown("""
 <style>
-    .metric-card {
-        background: #f0f4f8;
-        border-radius: 10px;
-        padding: 16px 20px;
-        text-align: center;
+    /* ── Tabs ── */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0px;
+        border-bottom: 2px solid #d0d0d0;
     }
-    .block-container { padding-top: 1.5rem; }
-    h1 { color: #1a3a5c; }
+    .stTabs [data-baseweb="tab"] {
+        text-transform: uppercase;
+        font-weight: 600;
+        font-size: 0.78rem;
+        letter-spacing: 0.05em;
+        color: #666;
+        background: transparent;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 0;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #1a3a5c !important;
+        background: #eef3f8 !important;
+        border-bottom: 2px solid #1a3a5c !important;
+    }
+    /* eliminar la línea roja del indicador de pestaña activa */
+    .stTabs [data-baseweb="tab-highlight"] {
+        background-color: transparent !important;
+    }
+    .stTabs [data-baseweb="tab-border"] {
+        background-color: transparent !important;
+    }
+
+    /* ── Checkboxes grises — caja marcada ── */
+    [data-testid="stCheckbox"] [role="checkbox"][aria-checked="true"] {
+        background-color: #777 !important;
+        border-color: #777 !important;
+        outline-color: #777 !important;
+    }
+    [data-testid="stCheckbox"] [role="checkbox"][aria-checked="false"] {
+        border-color: #aaa !important;
+    }
+    /* checkmark SVG */
+    [data-testid="stCheckbox"] [role="checkbox"] svg {
+        fill: #fff !important;
+        color: #fff !important;
+    }
+    /* Label atenuado cuando está desmarcado */
+    [data-testid="stCheckbox"]:has([aria-checked="false"]) label {
+        opacity: 0.4 !important;
+    }
+
+    /* ── Slider gris ── */
+    [data-testid="stSlider"] [role="slider"] {
+        background-color: #666 !important;
+        border-color: #666 !important;
+    }
+    [data-testid="stSlider"] [data-testid="stSliderTrackFill"] {
+        background-color: #999 !important;
+    }
+
+    /* ── Sidebar ── */
+    .block-container { padding-top: 1.2rem; }
+    h1 { color: #1a3a5c; font-size: 1.5rem; }
     h2, h3 { color: #2c5f8a; }
+    section[data-testid="stSidebar"] { background: #f7f8fa; }
+    section[data-testid="stSidebar"] .stExpander {
+        border: 1px solid #dde2ea;
+        border-radius: 6px;
+        margin-bottom: 6px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -86,7 +142,7 @@ NUMERIC_COLS = list(LABELS.keys())
 def load_data():
     df = pd.read_csv(CSV_PATH, sep=";", header=0, names=COLS, encoding="latin-1", low_memory=False)
     df = df[df["Servicio"].notna() & ~df["Servicio"].str.contains(r"Servicio|^$", na=True)]
-    df = df[~df["Servicio"].str.len().gt(50)]  # drop comment rows bleed into col 1
+    df = df[~df["Servicio"].str.len().gt(50)]
 
     for c in NUMERIC_COLS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -115,60 +171,75 @@ def load_data():
 
 df_raw = load_data()
 
-# ── SIDEBAR FILTERS ──────────────────────────────────────────────────────────
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Osakidetza_logo.svg/320px-Osakidetza_logo.svg.png", width=160)
-st.sidebar.title("Filtros")
+# ── helper: checkbox group inside expander ────────────────────────────────────
+def checkbox_filter(label, options, key_prefix):
+    sel = []
+    with st.sidebar.expander(label, expanded=False):
+        for opt in options:
+            if st.checkbox(opt, value=True, key=f"{key_prefix}_{opt}"):
+                sel.append(opt)
+    return sel if sel else options  # if none checked, show all
 
-servicios = sorted(df_raw["Servicio"].dropna().unique())
-sel_servicios = st.sidebar.multiselect("Servicio", servicios, default=servicios)
+# ── SIDEBAR ───────────────────────────────────────────────────────────────────
+st.sidebar.image(
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Osakidetza_logo.svg/320px-Osakidetza_logo.svg.png",
+    width=160,
+)
+st.sidebar.markdown("### Filtros")
 
+servicios    = sorted(df_raw["Servicio"].dropna().unique())
 ambulatorios = sorted(df_raw["Ambulatorio"].dropna().unique())
-sel_ambulatorios = st.sidebar.multiselect("Ambulatorio", ambulatorios, default=ambulatorios)
+generos      = sorted(df_raw["Genero"].dropna().unique())
 
-generos = sorted(df_raw["Genero"].dropna().unique())
-sel_generos = st.sidebar.multiselect("Género", generos, default=generos)
+sel_servicios    = checkbox_filter("Servicio", servicios, "srv")
+sel_ambulatorios = checkbox_filter("Ambulatorio", ambulatorios, "amb")
+sel_generos      = checkbox_filter("Género", generos, "gen")
 
-edad_min, edad_max = int(df_raw["Edad"].min(skipna=True)), int(df_raw["Edad"].max(skipna=True))
-sel_edad = st.sidebar.slider("Rango de edad", edad_min, edad_max, (edad_min, edad_max))
+edad_min = int(df_raw["Edad"].min(skipna=True))
+edad_max = int(df_raw["Edad"].max(skipna=True))
+st.sidebar.markdown("**Rango de edad**")
+sel_edad = st.sidebar.slider("", edad_min, edad_max, (edad_min, edad_max), label_visibility="collapsed")
 
 solo_completas = st.sidebar.checkbox("Solo respuestas completas (pág. 4)", value=False)
 
+# ── APPLY FILTERS ─────────────────────────────────────────────────────────────
 df = df_raw.copy()
-if sel_servicios:
-    df = df[df["Servicio"].isin(sel_servicios)]
-if sel_ambulatorios:
-    df = df[df["Ambulatorio"].isin(sel_ambulatorios)]
-if sel_generos:
-    df = df[df["Genero"].isin(sel_generos)]
+df = df[df["Servicio"].isin(sel_servicios)]
+df = df[df["Ambulatorio"].isin(sel_ambulatorios) | df["Ambulatorio"].isna()]
+df = df[df["Genero"].isin(sel_generos) | df["Genero"].isna()]
 df = df[df["Edad"].isna() | df["Edad"].between(sel_edad[0], sel_edad[1])]
 if solo_completas:
     df = df[df["UltimaPagina"].astype(str).str.strip().str.startswith("4")]
 
-# ── HEADER ───────────────────────────────────────────────────────────────────
-st.title("🏥 Dashboard Encuestas CCEE Extrahospitalaria")
-st.caption(f"Datos de {df['FechaEnvio'].min().strftime('%d/%m/%Y') if df['FechaEnvio'].notna().any() else '—'} "
-           f"a {df['FechaEnvio'].max().strftime('%d/%m/%Y') if df['FechaEnvio'].notna().any() else '—'} · "
-           f"{len(df):,} respuestas seleccionadas de {len(df_raw):,} totales")
+# ── HEADER ────────────────────────────────────────────────────────────────────
+st.title("Dashboard Encuestas CCEE Extrahospitalaria")
+fecha_ini = df["FechaEnvio"].min()
+fecha_fin = df["FechaEnvio"].max()
+st.caption(
+    f"Datos de {fecha_ini.strftime('%d/%m/%Y') if pd.notna(fecha_ini) else '—'} "
+    f"a {fecha_fin.strftime('%d/%m/%Y') if pd.notna(fecha_fin) else '—'} · "
+    f"{len(df):,} respuestas seleccionadas de {len(df_raw):,} totales"
+)
 
-tabs = st.tabs(["📊 Visión General", "🏷️ Por Servicio", "🏢 Por Ambulatorio", "👥 Demografía", "⏱️ Accesibilidad", "💬 Comentarios"])
+tabs = st.tabs(["Visión General", "Por Servicio", "Por Ambulatorio", "Demografía", "Accesibilidad", "Comentarios"])
 
-# ── TAB 1: VISIÓN GENERAL ────────────────────────────────────────────────────
+# ── TAB 1: VISIÓN GENERAL ─────────────────────────────────────────────────────
 with tabs[0]:
-    n_resp = len(df)
-    n_con_datos = df["Val_SatisfaccionGlobal"].notna().sum()
+    n_resp       = len(df)
+    n_con_datos  = df["Val_SatisfaccionGlobal"].notna().sum()
     media_global = df["Val_SatisfaccionGlobal"].mean()
-    pct_rec = df["Recomendaria_bool"].mean() * 100 if df["Recomendaria_bool"].notna().any() else None
-    pct_inc = df["Incidente_bool"].mean() * 100 if df["Incidente_bool"].notna().any() else None
+    pct_rec      = df["Recomendaria_bool"].mean() * 100 if df["Recomendaria_bool"].notna().any() else None
+    pct_inc      = df["Incidente_bool"].mean() * 100 if df["Incidente_bool"].notna().any() else None
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Respuestas totales", f"{n_resp:,}")
-    c2.metric("Con puntuación global", f"{n_con_datos:,}")
+    c1.metric("Respuestas totales",     f"{n_resp:,}")
+    c2.metric("Con puntuación global",  f"{n_con_datos:,}")
     c3.metric("Satisfacción global media", f"{media_global:.2f} / 10" if not np.isnan(media_global) else "—")
-    c4.metric("Recomendaría (%)", f"{pct_rec:.1f}%" if pct_rec is not None else "—")
+    c4.metric("Recomendaría (%)",       f"{pct_rec:.1f}%" if pct_rec is not None else "—")
     c5.metric("Incidentes seguridad (%)", f"{pct_inc:.1f}%" if pct_inc is not None else "—")
 
     st.divider()
-    col_radar, col_hist = st.columns([1, 1])
+    col_radar, col_hist = st.columns(2)
 
     with col_radar:
         st.subheader("Puntuación media por dimensión")
@@ -194,16 +265,20 @@ with tabs[0]:
         st.subheader("Distribución satisfacción global")
         fig_hist = px.histogram(
             df.dropna(subset=["Val_SatisfaccionGlobal"]),
-            x="Val_SatisfaccionGlobal",
-            nbins=11,
+            x="Val_SatisfaccionGlobal", nbins=11,
             color_discrete_sequence=["#2980b9"],
             labels={"Val_SatisfaccionGlobal": "Puntuación (0-10)"},
         )
         fig_hist.update_layout(bargap=0.08, margin=dict(t=30, b=30), height=380, yaxis_title="Nº respuestas")
         st.plotly_chart(fig_hist, use_container_width=True)
 
-    st.subheader("Evolución mensual – Satisfacción global media")
-    evol = df.dropna(subset=["Val_SatisfaccionGlobal", "Mes"]).groupby("Mes")["Val_SatisfaccionGlobal"].agg(["mean", "count"]).reset_index()
+    st.subheader("Evolución mensual — Satisfacción global media")
+    evol = (
+        df.dropna(subset=["Val_SatisfaccionGlobal", "Mes"])
+        .groupby("Mes")["Val_SatisfaccionGlobal"]
+        .agg(["mean", "count"])
+        .reset_index()
+    )
     evol.columns = ["Mes", "Media", "N"]
     evol = evol[evol["N"] >= 5]
     if not evol.empty:
@@ -232,23 +307,23 @@ with tabs[1]:
     fig_srv.update_layout(height=400, margin=dict(t=20, b=20), coloraxis_showscale=False, xaxis_range=[0, 11])
     st.plotly_chart(fig_srv, use_container_width=True)
 
-    st.subheader("Heatmap – Dimensiones por servicio")
+    st.subheader("Heatmap — Dimensiones por servicio")
     dim_cols = [f"Dim_{d}" for d in DIMENSIONES if f"Dim_{d}" in df.columns]
     hm_data = df.groupby("Servicio")[dim_cols].mean().round(2)
     hm_data.columns = list(DIMENSIONES.keys())
     hm_data = hm_data.dropna(how="all")
-
-    fig_hm = px.imshow(
-        hm_data,
-        text_auto=True, aspect="auto",
-        color_continuous_scale="RdYlGn", zmin=0, zmax=10,
-        labels=dict(color="Puntuación"),
-    )
+    fig_hm = px.imshow(hm_data, text_auto=True, aspect="auto",
+                       color_continuous_scale="RdYlGn", zmin=0, zmax=10,
+                       labels=dict(color="Puntuación"))
     fig_hm.update_layout(height=400, margin=dict(t=20, b=20))
     st.plotly_chart(fig_hm, use_container_width=True)
 
     st.subheader("% Recomendaría por servicio")
-    rec_srv = df.groupby("Servicio")["Recomendaria_bool"].agg(lambda x: x.mean() * 100 if x.notna().any() else np.nan).reset_index()
+    rec_srv = (
+        df.groupby("Servicio")["Recomendaria_bool"]
+        .agg(lambda x: x.mean() * 100 if x.notna().any() else np.nan)
+        .reset_index()
+    )
     rec_srv.columns = ["Servicio", "PctRec"]
     rec_srv = rec_srv.dropna().sort_values("PctRec", ascending=True)
     fig_rec = px.bar(rec_srv, x="PctRec", y="Servicio", orientation="h",
@@ -259,7 +334,7 @@ with tabs[1]:
     fig_rec.update_layout(height=380, margin=dict(t=20, b=20), coloraxis_showscale=False, xaxis_range=[0, 115])
     st.plotly_chart(fig_rec, use_container_width=True)
 
-# ── TAB 3: POR AMBULATORIO ───────────────────────────────────────────────────
+# ── TAB 3: POR AMBULATORIO ────────────────────────────────────────────────────
 with tabs[2]:
     st.subheader("Satisfacción global media por ambulatorio")
     amb_global = df.groupby("Ambulatorio")["Val_SatisfaccionGlobal"].agg(["mean", "count"]).reset_index()
@@ -276,32 +351,26 @@ with tabs[2]:
     fig_amb.update_layout(height=400, margin=dict(t=20, b=20), coloraxis_showscale=False, xaxis_range=[0, 11])
     st.plotly_chart(fig_amb, use_container_width=True)
 
-    st.subheader("Heatmap – Dimensiones por ambulatorio")
-    dim_cols = [f"Dim_{d}" for d in DIMENSIONES if f"Dim_{d}" in df.columns]
+    st.subheader("Heatmap — Dimensiones por ambulatorio")
     hm_amb = df.groupby("Ambulatorio")[dim_cols].mean().round(2)
     hm_amb.columns = list(DIMENSIONES.keys())
     hm_amb = hm_amb.dropna(how="all")
-
-    fig_hm_amb = px.imshow(
-        hm_amb, text_auto=True, aspect="auto",
-        color_continuous_scale="RdYlGn", zmin=0, zmax=10,
-        labels=dict(color="Puntuación"),
-    )
+    fig_hm_amb = px.imshow(hm_amb, text_auto=True, aspect="auto",
+                           color_continuous_scale="RdYlGn", zmin=0, zmax=10,
+                           labels=dict(color="Puntuación"))
     fig_hm_amb.update_layout(height=380, margin=dict(t=20, b=20))
     st.plotly_chart(fig_hm_amb, use_container_width=True)
 
-    st.subheader("Cruce servicio × ambulatorio – Satisfacción global")
+    st.subheader("Cruce servicio × ambulatorio — Satisfacción global")
     pivot = df.pivot_table(values="Val_SatisfaccionGlobal", index="Servicio", columns="Ambulatorio", aggfunc="mean").round(2)
     if not pivot.empty:
-        fig_cross = px.imshow(
-            pivot, text_auto=True, aspect="auto",
-            color_continuous_scale="RdYlGn", zmin=0, zmax=10,
-            labels=dict(color="Puntuación"),
-        )
+        fig_cross = px.imshow(pivot, text_auto=True, aspect="auto",
+                              color_continuous_scale="RdYlGn", zmin=0, zmax=10,
+                              labels=dict(color="Puntuación"))
         fig_cross.update_layout(height=450, margin=dict(t=20, b=20))
         st.plotly_chart(fig_cross, use_container_width=True)
 
-# ── TAB 4: DEMOGRAFÍA ────────────────────────────────────────────────────────
+# ── TAB 4: DEMOGRAFÍA ─────────────────────────────────────────────────────────
 with tabs[3]:
     col1, col2 = st.columns(2)
 
@@ -310,8 +379,7 @@ with tabs[3]:
         gen_counts = df["Genero"].value_counts().reset_index()
         gen_counts.columns = ["Género", "N"]
         fig_gen = px.pie(gen_counts, names="Género", values="N",
-                         color_discrete_sequence=px.colors.qualitative.Set2,
-                         hole=0.4)
+                         color_discrete_sequence=px.colors.qualitative.Set2, hole=0.4)
         fig_gen.update_layout(height=350, margin=dict(t=20, b=20))
         st.plotly_chart(fig_gen, use_container_width=True)
 
@@ -347,28 +415,24 @@ with tabs[3]:
     fig_esat.update_layout(height=320, yaxis_range=[0, 11], coloraxis_showscale=False, margin=dict(t=20, b=20))
     st.plotly_chart(fig_esat, use_container_width=True)
 
-# ── TAB 5: ACCESIBILIDAD ─────────────────────────────────────────────────────
+# ── TAB 5: ACCESIBILIDAD ──────────────────────────────────────────────────────
 with tabs[4]:
-    st.subheader("Tiempos de espera – Puntuación media por servicio")
-
-    acc_cols = {
+    st.subheader("Tiempos de espera — Puntuación media por servicio")
+    acc_cols_map = {
         "Acc_EsperaFirstVisit": "Espera 1ª visita",
         "Acc_EsperaSeguimiento": "Espera seguimiento",
         "Acc_EsperaSalaEspera": "Espera en sala",
     }
-    acc_data = df.groupby("Servicio")[list(acc_cols.keys())].mean().round(2)
-    acc_data = acc_data.rename(columns=acc_cols).reset_index()
+    acc_data = df.groupby("Servicio")[list(acc_cols_map.keys())].mean().round(2)
+    acc_data = acc_data.rename(columns=acc_cols_map).reset_index()
     acc_melted = acc_data.melt(id_vars="Servicio", var_name="Indicador", value_name="Puntuación")
-
-    fig_acc = px.bar(
-        acc_melted, x="Servicio", y="Puntuación", color="Indicador",
-        barmode="group", color_discrete_sequence=["#2980b9", "#e67e22", "#27ae60"],
-        labels={"Puntuación": "Puntuación media (0-10)"},
-    )
+    fig_acc = px.bar(acc_melted, x="Servicio", y="Puntuación", color="Indicador",
+                     barmode="group", color_discrete_sequence=["#2980b9", "#e67e22", "#27ae60"],
+                     labels={"Puntuación": "Puntuación media (0-10)"})
     fig_acc.update_layout(height=420, margin=dict(t=20, b=20), yaxis_range=[0, 11])
     st.plotly_chart(fig_acc, use_container_width=True)
 
-    st.subheader("¿Segunda visita de seguimiento?")
+    st.subheader("Segunda visita de seguimiento")
     seg = df["SegundaVisita"].astype(str).str.strip().replace("nan", np.nan).dropna().value_counts().reset_index()
     seg.columns = ["Respuesta", "N"]
     fig_seg = px.pie(seg, names="Respuesta", values="N", hole=0.4,
@@ -376,43 +440,50 @@ with tabs[4]:
     fig_seg.update_layout(height=320, margin=dict(t=20, b=20))
     st.plotly_chart(fig_seg, use_container_width=True)
 
-    st.subheader("Espera 1ª visita vs. espera en sala – por servicio")
+    st.subheader("Espera 1ª visita vs. espera en sala — por servicio")
     scatter_df = df.dropna(subset=["Acc_EsperaFirstVisit", "Acc_EsperaSalaEspera", "Servicio"])
-    fig_sc = px.scatter(
-        scatter_df, x="Acc_EsperaFirstVisit", y="Acc_EsperaSalaEspera",
-        color="Servicio", opacity=0.5, size_max=6,
-        labels={"Acc_EsperaFirstVisit": "Espera 1ª visita", "Acc_EsperaSalaEspera": "Espera en sala"},
-    )
+    fig_sc = px.scatter(scatter_df, x="Acc_EsperaFirstVisit", y="Acc_EsperaSalaEspera",
+                        color="Servicio", opacity=0.5,
+                        labels={"Acc_EsperaFirstVisit": "Espera 1ª visita", "Acc_EsperaSalaEspera": "Espera en sala"})
     fig_sc.update_layout(height=420, margin=dict(t=20, b=20), xaxis_range=[-0.5, 10.5], yaxis_range=[-0.5, 10.5])
     st.plotly_chart(fig_sc, use_container_width=True)
 
-# ── TAB 6: COMENTARIOS ───────────────────────────────────────────────────────
+# ── TAB 6: COMENTARIOS ────────────────────────────────────────────────────────
 with tabs[5]:
     col_a, col_b = st.columns(2)
 
     with col_a:
         st.subheader("Incidentes de seguridad reportados")
         inc_total = df["Incidente_bool"].notna().sum()
-        inc_si = df["Incidente_bool"].sum()
-        inc_no = (df["Incidente_bool"] == False).sum()
-        st.metric("Total responden", f"{int(inc_total):,}")
+        inc_si    = df["Incidente_bool"].sum()
+        inc_no    = (df["Incidente_bool"] == False).sum()
+        st.metric("Total responden",    f"{int(inc_total):,}")
         st.metric("Reportan incidente", f"{int(inc_si):,} ({inc_si/inc_total*100:.1f}%)" if inc_total else "—")
-        st.metric("Sin incidente", f"{int(inc_no):,}")
+        st.metric("Sin incidente",      f"{int(inc_no):,}")
 
         inc_srv = df.groupby("Servicio")["Incidente_bool"].mean().mul(100).round(1).reset_index()
         inc_srv.columns = ["Servicio", "% Incidentes"]
         inc_srv = inc_srv.dropna().sort_values("% Incidentes", ascending=False)
-        fig_inc = px.bar(inc_srv, x="Servicio", y="% Incidentes",
-                         color="% Incidentes", color_continuous_scale="Reds",
-                         labels={"% Incidentes": "% pacientes con incidente"})
-        fig_inc.update_layout(height=350, margin=dict(t=20, b=20), coloraxis_showscale=False)
+        colores_inc = ["#8b0000" if v == inc_srv["% Incidentes"].max() else "#aaaaaa" for v in inc_srv["% Incidentes"]]
+        fig_inc = go.Figure(go.Bar(
+            x=inc_srv["Servicio"], y=inc_srv["% Incidentes"],
+            marker_color=colores_inc,
+            text=inc_srv["% Incidentes"].astype(str) + "%",
+            textposition="outside",
+        ))
+        fig_inc.update_layout(height=350, margin=dict(t=20, b=20),
+                              yaxis_title="% pacientes con incidente", xaxis_title="")
         st.plotly_chart(fig_inc, use_container_width=True)
 
     with col_b:
         st.subheader("Descripción de incidentes")
-        incidentes = df[df["Incidente_bool"] == True][["Servicio", "Ambulatorio", "Seg_DescripcionIncidente"]].dropna(subset=["Seg_DescripcionIncidente"])
+        incidentes = (
+            df[df["Incidente_bool"] == True][["Servicio", "Ambulatorio", "Seg_DescripcionIncidente"]]
+            .dropna(subset=["Seg_DescripcionIncidente"])
+        )
         incidentes = incidentes[incidentes["Seg_DescripcionIncidente"].astype(str).str.strip() != ""]
-        st.dataframe(incidentes.rename(columns={"Seg_DescripcionIncidente": "Descripción"}), height=400, use_container_width=True)
+        st.dataframe(incidentes.rename(columns={"Seg_DescripcionIncidente": "Descripción"}),
+                     height=400, use_container_width=True)
 
     st.divider()
     st.subheader("Comentarios libres")
@@ -421,14 +492,10 @@ with tabs[5]:
 
     buscar = st.text_input("Buscar en comentarios", placeholder="escribe para filtrar...")
     if buscar:
-        comentarios = comentarios[comentarios["Val_Comentarios"].str.contains(buscar, case=False, na=False)]
+        comentarios = comentarios[comentarios["Val_Comentarios"].astype(str).str.contains(buscar, case=False, na=False)]
 
     st.caption(f"{len(comentarios):,} comentarios")
     st.dataframe(
-        comentarios.rename(columns={
-            "Val_SatisfaccionGlobal": "Nota global",
-            "Val_Comentarios": "Comentario",
-        }),
-        height=400,
-        use_container_width=True,
+        comentarios.rename(columns={"Val_SatisfaccionGlobal": "Nota global", "Val_Comentarios": "Comentario"}),
+        height=400, use_container_width=True,
     )
