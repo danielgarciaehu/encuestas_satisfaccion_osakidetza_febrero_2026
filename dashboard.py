@@ -5,8 +5,35 @@ import streamlit as st
 import numpy as np
 from pathlib import Path
 
+# ─── PALETA "Tierra periodística" ────────────────────────────────────────────
+# Tonos desaturados / terrosos. Mantiene las diferencias del diseño original
+# pero baja la saturación global. Evita rojo-verde puro para daltonismo.
+CORP       = "#34495a"   # azul pizarra (antes #2980b9)
+CORP_DARK  = "#24323f"   # títulos (antes #1a3a5c)
+CORP_MED   = "#34495a"   # subtítulos (antes #2c5f8a)
+CORP_SOFT  = "#5b7083"   # marker box (antes #6b9abe)
+CORP_TINT  = "rgba(52,73,90,0.18)"   # relleno radar / box (antes rgba(41,128,185,.18))
+
+# Escala divergente 0–10 (sustituye "RdYlGn" en todos los gráficos)
+DIVERGING  = [
+    [0.00, "#b06a5b"],   # arcilla
+    [0.25, "#cb9784"],
+    [0.50, "#e3d7c3"],   # beige neutro
+    [0.75, "#a8ab85"],
+    [1.00, "#6f8558"],   # verde oliva
+]
+
+CAT_3      = ["#34495a", "#b89466", "#88916a"]   # azul · ámbar · oliva (accesibilidad)
+QUAL       = ["#5b7083", "#b89466", "#88916a", "#9c7a8a", "#b06a5b", "#878074"]  # cualitativa (pie género, etc.)
+
+OK         = "#6f8558"   # sí / éxito (antes #27ae60)
+WARN       = "#b89466"   # aviso (antes #e67e22)
+BAD        = "#a85a4c"   # no / error (antes #e74c3c)
+NEUTRAL    = "#a09b90"   # barras no destacadas (antes #95a5a6 / #aaaaaa)
+ACCENT     = "#7a3b32"   # destacado: servicio con más incidentes (antes #8b0000)
+
 st.set_page_config(
-    page_title="Dashboard Encuestas CCEE",
+    page_title="Encuestas CCEE",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -16,23 +43,23 @@ st.markdown("""
     /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0px;
-        border-bottom: 2px solid #d0d0d0;
+        border-bottom: 2px solid #d6d3cc;
     }
     .stTabs [data-baseweb="tab"] {
         text-transform: uppercase;
         font-weight: 600;
         font-size: 0.78rem;
         letter-spacing: 0.05em;
-        color: #666;
+        color: #6a6a63;
         background: transparent;
         border: none;
         padding: 10px 20px;
         border-radius: 0;
     }
     .stTabs [aria-selected="true"] {
-        color: #1a3a5c !important;
-        background: #eef3f8 !important;
-        border-bottom: 2px solid #1a3a5c !important;
+        color: #24323f !important;
+        background: #edeae2 !important;
+        border-bottom: 2px solid #24323f !important;
     }
     /* eliminar la línea roja del indicador de pestaña activa */
     .stTabs [data-baseweb="tab-highlight"] {
@@ -44,12 +71,12 @@ st.markdown("""
 
     /* ── Checkboxes grises — caja marcada ── */
     [data-testid="stCheckbox"] [role="checkbox"][aria-checked="true"] {
-        background-color: #777 !important;
-        border-color: #777 !important;
-        outline-color: #777 !important;
+        background-color: #6b6f6a !important;
+        border-color: #6b6f6a !important;
+        outline-color: #6b6f6a !important;
     }
     [data-testid="stCheckbox"] [role="checkbox"][aria-checked="false"] {
-        border-color: #aaa !important;
+        border-color: #b4b0a6 !important;
     }
     /* checkmark SVG */
     [data-testid="stCheckbox"] [role="checkbox"] svg {
@@ -63,20 +90,20 @@ st.markdown("""
 
     /* ── Slider gris ── */
     [data-testid="stSlider"] [role="slider"] {
-        background-color: #666 !important;
-        border-color: #666 !important;
+        background-color: #5b5e58 !important;
+        border-color: #5b5e58 !important;
     }
     [data-testid="stSlider"] [data-testid="stSliderTrackFill"] {
-        background-color: #999 !important;
+        background-color: #9a9890 !important;
     }
 
     /* ── Sidebar ── */
     .block-container { padding-top: 1.2rem; }
-    h1 { color: #1a3a5c; font-size: 1.5rem; }
-    h2, h3 { color: #2c5f8a; }
-    section[data-testid="stSidebar"] { background: #f7f8fa; }
+    h1 { color: #24323f; font-size: 1.5rem; }
+    h2, h3 { color: #34495a; }
+    section[data-testid="stSidebar"] { background: #f5f3ed; }
     section[data-testid="stSidebar"] .stExpander {
-        border: 1px solid #dde2ea;
+        border: 1px solid #e0ddd2;
         border-radius: 6px;
         margin-bottom: 6px;
     }
@@ -212,7 +239,7 @@ if solo_completas:
     df = df[df["UltimaPagina"].astype(str).str.strip().str.startswith("4")]
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
-st.title("Dashboard Encuestas CCEE Extrahospitalaria")
+st.title("Encuestas CCEE Extrahospitalaria")
 fecha_ini = df["FechaEnvio"].min()
 fecha_fin = df["FechaEnvio"].max()
 st.caption(
@@ -250,9 +277,9 @@ with tabs[0]:
             r=vals + [vals[0]],
             theta=dims + [dims[0]],
             fill="toself",
-            fillcolor="rgba(41,128,185,0.2)",
-            line=dict(color="#2980b9", width=2),
-            marker=dict(size=6),
+            fillcolor=CORP_TINT,
+            line=dict(color=CORP, width=2),
+            marker=dict(size=6, color=CORP),
         ))
         fig_radar.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
@@ -266,7 +293,7 @@ with tabs[0]:
         fig_hist = px.histogram(
             df.dropna(subset=["Val_SatisfaccionGlobal"]),
             x="Val_SatisfaccionGlobal", nbins=11,
-            color_discrete_sequence=["#2980b9"],
+            color_discrete_sequence=[CORP],
             labels={"Val_SatisfaccionGlobal": "Puntuación (0-10)"},
         )
         fig_hist.update_layout(bargap=0.08, margin=dict(t=30, b=30), height=380, yaxis_title="Nº respuestas")
@@ -283,9 +310,9 @@ with tabs[0]:
         vals_srv = box_data[box_data["Servicio"] == srv]["Val_SatisfaccionGlobal"]
         fig_box.add_trace(go.Box(
             y=vals_srv, name=srv,
-            marker_color="#6b9abe",
-            line_color="#1a3a5c",
-            fillcolor="rgba(41,128,185,0.18)",
+            marker_color=CORP_SOFT,
+            line_color=CORP_DARK,
+            fillcolor=CORP_TINT,
             boxmean=True,
         ))
     fig_box.update_layout(
@@ -306,7 +333,7 @@ with tabs[1]:
 
     fig_srv = px.bar(
         srv_global, x="Media", y="Servicio", orientation="h",
-        color="Media", color_continuous_scale="RdYlGn", range_color=[0, 10],
+        color="Media", color_continuous_scale=DIVERGING, range_color=[0, 10],
         text=srv_global["Media"].round(2).astype(str) + " (" + srv_global["N"].astype(str) + ")",
         labels={"Media": "Puntuación media", "Servicio": ""},
     )
@@ -320,7 +347,7 @@ with tabs[1]:
     hm_data.columns = list(DIMENSIONES.keys())
     hm_data = hm_data.dropna(how="all")
     fig_hm = px.imshow(hm_data, text_auto=True, aspect="auto",
-                       color_continuous_scale="RdYlGn", zmin=0, zmax=10,
+                       color_continuous_scale=DIVERGING, zmin=0, zmax=10,
                        labels=dict(color="Puntuación"))
     fig_hm.update_layout(height=400, margin=dict(t=20, b=20))
     st.plotly_chart(fig_hm, use_container_width=True)
@@ -330,7 +357,7 @@ with tabs[1]:
     rec_srv.columns = ["Servicio", "MediaRec"]
     rec_srv = rec_srv.dropna().sort_values("MediaRec", ascending=True)
     fig_rec = px.bar(rec_srv, x="MediaRec", y="Servicio", orientation="h",
-                     color="MediaRec", color_continuous_scale="RdYlGn", range_color=[0, 10],
+                     color="MediaRec", color_continuous_scale=DIVERGING, range_color=[0, 10],
                      labels={"MediaRec": "Puntuación media recomendación", "Servicio": ""},
                      text=rec_srv["MediaRec"].astype(str))
     fig_rec.update_traces(textposition="outside")
@@ -346,7 +373,7 @@ with tabs[2]:
 
     fig_amb = px.bar(
         amb_global, x="Media", y="Ambulatorio", orientation="h",
-        color="Media", color_continuous_scale="RdYlGn", range_color=[0, 10],
+        color="Media", color_continuous_scale=DIVERGING, range_color=[0, 10],
         text=amb_global["Media"].round(2).astype(str) + " (" + amb_global["N"].astype(str) + ")",
         labels={"Media": "Puntuación media", "Ambulatorio": ""},
     )
@@ -359,7 +386,7 @@ with tabs[2]:
     hm_amb.columns = list(DIMENSIONES.keys())
     hm_amb = hm_amb.dropna(how="all")
     fig_hm_amb = px.imshow(hm_amb, text_auto=True, aspect="auto",
-                           color_continuous_scale="RdYlGn", zmin=0, zmax=10,
+                           color_continuous_scale=DIVERGING, zmin=0, zmax=10,
                            labels=dict(color="Puntuación"))
     fig_hm_amb.update_layout(height=380, margin=dict(t=20, b=20))
     st.plotly_chart(fig_hm_amb, use_container_width=True)
@@ -368,7 +395,7 @@ with tabs[2]:
     pivot = df.pivot_table(values="Val_SatisfaccionGlobal", index="Servicio", columns="Ambulatorio", aggfunc="mean").round(2)
     if not pivot.empty:
         fig_cross = px.imshow(pivot, text_auto=True, aspect="auto",
-                              color_continuous_scale="RdYlGn", zmin=0, zmax=10,
+                              color_continuous_scale=DIVERGING, zmin=0, zmax=10,
                               labels=dict(color="Puntuación"))
         fig_cross.update_layout(height=450, margin=dict(t=20, b=20))
         st.plotly_chart(fig_cross, use_container_width=True)
@@ -382,7 +409,7 @@ with tabs[3]:
         gen_counts = df["Genero"].value_counts().reset_index()
         gen_counts.columns = ["Género", "N"]
         fig_gen = px.pie(gen_counts, names="Género", values="N",
-                         color_discrete_sequence=px.colors.qualitative.Set2, hole=0.4)
+                         color_discrete_sequence=QUAL, hole=0.4)
         fig_gen.update_layout(height=350, margin=dict(t=20, b=20))
         st.plotly_chart(fig_gen, use_container_width=True)
 
@@ -391,7 +418,7 @@ with tabs[3]:
         edad_counts = df["GrupoEdad"].value_counts().sort_index().reset_index()
         edad_counts.columns = ["Grupo", "N"]
         fig_edad = px.bar(edad_counts, x="Grupo", y="N",
-                          color_discrete_sequence=["#2980b9"],
+                          color_discrete_sequence=[CORP],
                           labels={"Grupo": "Grupo de edad", "N": "Nº respuestas"})
         fig_edad.update_layout(height=350, margin=dict(t=20, b=20))
         st.plotly_chart(fig_edad, use_container_width=True)
@@ -401,7 +428,7 @@ with tabs[3]:
     gen_sat.columns = ["Género", "Media", "N"]
     gen_sat = gen_sat[gen_sat["N"] >= 5]
     fig_gsat = px.bar(gen_sat, x="Género", y="Media",
-                      color="Media", color_continuous_scale="RdYlGn", range_color=[0, 10],
+                      color="Media", color_continuous_scale=DIVERGING, range_color=[0, 10],
                       text=gen_sat["Media"].round(2), labels={"Media": "Puntuación media"})
     fig_gsat.update_traces(textposition="outside")
     fig_gsat.update_layout(height=320, yaxis_range=[0, 11], coloraxis_showscale=False, margin=dict(t=20, b=20))
@@ -412,7 +439,7 @@ with tabs[3]:
     edad_sat.columns = ["GrupoEdad", "Media", "N"]
     edad_sat = edad_sat[edad_sat["N"] >= 5]
     fig_esat = px.bar(edad_sat, x="GrupoEdad", y="Media",
-                      color="Media", color_continuous_scale="RdYlGn", range_color=[0, 10],
+                      color="Media", color_continuous_scale=DIVERGING, range_color=[0, 10],
                       text=edad_sat["Media"].round(2), labels={"GrupoEdad": "Grupo de edad", "Media": "Puntuación media"})
     fig_esat.update_traces(textposition="outside")
     fig_esat.update_layout(height=320, yaxis_range=[0, 11], coloraxis_showscale=False, margin=dict(t=20, b=20))
@@ -430,7 +457,7 @@ with tabs[4]:
     acc_data = acc_data.rename(columns=acc_cols_map).reset_index()
     acc_melted = acc_data.melt(id_vars="Servicio", var_name="Indicador", value_name="Puntuación")
     fig_acc = px.bar(acc_melted, x="Servicio", y="Puntuación", color="Indicador",
-                     barmode="group", color_discrete_sequence=["#2980b9", "#e67e22", "#27ae60"],
+                     barmode="group", color_discrete_sequence=CAT_3,
                      labels={"Puntuación": "Puntuación media (0-10)"})
     fig_acc.update_layout(height=420, margin=dict(t=20, b=20), yaxis_range=[0, 11])
     st.plotly_chart(fig_acc, use_container_width=True)
@@ -439,7 +466,7 @@ with tabs[4]:
     seg = df["SegundaVisita"].astype(str).str.strip().replace("nan", np.nan).dropna().value_counts().reset_index()
     seg.columns = ["Respuesta", "N"]
     fig_seg = px.pie(seg, names="Respuesta", values="N", hole=0.4,
-                     color_discrete_sequence=["#27ae60", "#e74c3c", "#95a5a6"])
+                     color_discrete_sequence=[OK, BAD, NEUTRAL])
     fig_seg.update_layout(height=320, margin=dict(t=20, b=20))
     st.plotly_chart(fig_seg, use_container_width=True)
 
@@ -467,7 +494,7 @@ with tabs[5]:
         inc_srv = df.groupby("Servicio")["Incidente_bool"].mean().mul(100).round(1).reset_index()
         inc_srv.columns = ["Servicio", "% Incidentes"]
         inc_srv = inc_srv.dropna().sort_values("% Incidentes", ascending=False)
-        colores_inc = ["#8b0000" if v == inc_srv["% Incidentes"].max() else "#aaaaaa" for v in inc_srv["% Incidentes"]]
+        colores_inc = [ACCENT if v == inc_srv["% Incidentes"].max() else NEUTRAL for v in inc_srv["% Incidentes"]]
         fig_inc = go.Figure(go.Bar(
             x=inc_srv["Servicio"], y=inc_srv["% Incidentes"],
             marker_color=colores_inc,
