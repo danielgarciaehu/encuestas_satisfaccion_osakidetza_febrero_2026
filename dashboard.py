@@ -157,7 +157,7 @@ def load_data():
         labels=["<30", "30-44", "45-59", "60-74", "75+"],
     )
 
-    df["Recomendaria_bool"] = df["Val_Recomendaria"].astype(str).str.strip().str.lower().map({"sí": True, "si": True, "no": False})
+    df["Val_Recomendaria"] = pd.to_numeric(df["Val_Recomendaria"], errors="coerce")
     df["Incidente_bool"] = df["Seg_Incidente"].astype(str).str.strip().str.lower().map({"sí": True, "si": True, "no": False})
 
     df["FechaEnvio"] = pd.to_datetime(df["FechaEnvio"], format="%d/%m/%Y %H:%M", errors="coerce")
@@ -228,14 +228,14 @@ with tabs[0]:
     n_resp       = len(df)
     n_con_datos  = df["Val_SatisfaccionGlobal"].notna().sum()
     media_global = df["Val_SatisfaccionGlobal"].mean()
-    pct_rec      = df["Recomendaria_bool"].mean() * 100 if df["Recomendaria_bool"].notna().any() else None
+    media_rec    = df["Val_Recomendaria"].mean()
     pct_inc      = df["Incidente_bool"].mean() * 100 if df["Incidente_bool"].notna().any() else None
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Respuestas totales",     f"{n_resp:,}")
-    c2.metric("Con puntuación global",  f"{n_con_datos:,}")
+    c1.metric("Respuestas totales",       f"{n_resp:,}")
+    c2.metric("Con puntuación global",    f"{n_con_datos:,}")
     c3.metric("Satisfacción global media", f"{media_global:.2f} / 10" if not np.isnan(media_global) else "—")
-    c4.metric("Recomendaría (%)",       f"{pct_rec:.1f}%" if pct_rec is not None else "—")
+    c4.metric("Recomendación media",      f"{media_rec:.2f} / 10" if not np.isnan(media_rec) else "—")
     c5.metric("Incidentes seguridad (%)", f"{pct_inc:.1f}%" if pct_inc is not None else "—")
 
     st.divider()
@@ -272,23 +272,30 @@ with tabs[0]:
         fig_hist.update_layout(bargap=0.08, margin=dict(t=30, b=30), height=380, yaxis_title="Nº respuestas")
         st.plotly_chart(fig_hist, use_container_width=True)
 
-    st.subheader("Evolución mensual — Satisfacción global media")
-    evol = (
-        df.dropna(subset=["Val_SatisfaccionGlobal", "Mes"])
-        .groupby("Mes")["Val_SatisfaccionGlobal"]
-        .agg(["mean", "count"])
-        .reset_index()
+    st.subheader("Distribución de satisfacción por servicio")
+    box_data = df.dropna(subset=["Val_SatisfaccionGlobal", "Servicio"])
+    servicios_ord = (
+        box_data.groupby("Servicio")["Val_SatisfaccionGlobal"]
+        .median().sort_values(ascending=False).index.tolist()
     )
-    evol.columns = ["Mes", "Media", "N"]
-    evol = evol[evol["N"] >= 5]
-    if not evol.empty:
-        fig_evol = px.line(evol, x="Mes", y="Media", markers=True,
-                           labels={"Media": "Puntuación media", "Mes": ""},
-                           color_discrete_sequence=["#1a6e9e"])
-        fig_evol.update_layout(yaxis_range=[0, 10], margin=dict(t=20, b=20), height=300)
-        st.plotly_chart(fig_evol, use_container_width=True)
-    else:
-        st.info("No hay suficientes datos con fecha para mostrar evolución.")
+    fig_box = go.Figure()
+    for srv in servicios_ord:
+        vals_srv = box_data[box_data["Servicio"] == srv]["Val_SatisfaccionGlobal"]
+        fig_box.add_trace(go.Box(
+            y=vals_srv, name=srv,
+            marker_color="#6b9abe",
+            line_color="#1a3a5c",
+            fillcolor="rgba(41,128,185,0.18)",
+            boxmean=True,
+        ))
+    fig_box.update_layout(
+        yaxis=dict(title="Satisfacción global (0-10)", range=[0, 10.5]),
+        xaxis_title="",
+        showlegend=False,
+        margin=dict(t=20, b=20),
+        height=370,
+    )
+    st.plotly_chart(fig_box, use_container_width=True)
 
 # ── TAB 2: POR SERVICIO ───────────────────────────────────────────────────────
 with tabs[1]:
@@ -318,20 +325,16 @@ with tabs[1]:
     fig_hm.update_layout(height=400, margin=dict(t=20, b=20))
     st.plotly_chart(fig_hm, use_container_width=True)
 
-    st.subheader("% Recomendaría por servicio")
-    rec_srv = (
-        df.groupby("Servicio")["Recomendaria_bool"]
-        .agg(lambda x: x.mean() * 100 if x.notna().any() else np.nan)
-        .reset_index()
-    )
-    rec_srv.columns = ["Servicio", "PctRec"]
-    rec_srv = rec_srv.dropna().sort_values("PctRec", ascending=True)
-    fig_rec = px.bar(rec_srv, x="PctRec", y="Servicio", orientation="h",
-                     color="PctRec", color_continuous_scale="RdYlGn", range_color=[0, 100],
-                     labels={"PctRec": "% Recomendaría", "Servicio": ""},
-                     text=rec_srv["PctRec"].round(1).astype(str) + "%")
+    st.subheader("Recomendación media por servicio (0-10)")
+    rec_srv = df.groupby("Servicio")["Val_Recomendaria"].mean().round(2).reset_index()
+    rec_srv.columns = ["Servicio", "MediaRec"]
+    rec_srv = rec_srv.dropna().sort_values("MediaRec", ascending=True)
+    fig_rec = px.bar(rec_srv, x="MediaRec", y="Servicio", orientation="h",
+                     color="MediaRec", color_continuous_scale="RdYlGn", range_color=[0, 10],
+                     labels={"MediaRec": "Puntuación media recomendación", "Servicio": ""},
+                     text=rec_srv["MediaRec"].astype(str))
     fig_rec.update_traces(textposition="outside")
-    fig_rec.update_layout(height=380, margin=dict(t=20, b=20), coloraxis_showscale=False, xaxis_range=[0, 115])
+    fig_rec.update_layout(height=380, margin=dict(t=20, b=20), coloraxis_showscale=False, xaxis_range=[0, 11])
     st.plotly_chart(fig_rec, use_container_width=True)
 
 # ── TAB 3: POR AMBULATORIO ────────────────────────────────────────────────────
